@@ -1,4 +1,5 @@
 import os
+import sys
 shpath = '/usr/lib/gnome-shell'
 os.environ['LD_PRELOAD'] = shpath + '/libgnome-shell.so'
 os.environ['GI_TYPELIB_PATH'] = shpath
@@ -102,7 +103,8 @@ class SourceViewArea(TextArea):
 
 
 class App:
-    def __init__(self):
+    def __init__(self, filename):
+        self.filename = filename
         self.setup()
 
     def setup(self):
@@ -130,15 +132,21 @@ class App:
                                   height=rect.height - 28)
         self.stage.add_child(background)
 
-        left_box = St.BoxLayout(style_class="left_box", vertical=True)
-        background.add_child(left_box)
+        self.left_box = St.BoxLayout(style_class="left_box", vertical=True)
+        background.add_child(self.left_box)
 
-        right_box = St.BoxLayout(style_class="right_box", vertical=True)
-        background.add_child(right_box)
+        self.right_box = St.BoxLayout(style_class="right_box", vertical=True)
+        background.add_child(self.right_box)
 
+        self.clutter.show()
+
+        if self.filename:
+            self.open_file(self.filename)
+
+    def open_file(self, filename):
         source_view = SourceViewArea()
-        source_view.add_from_file('example.py')
-        left_box.add_child(source_view, expand=True)
+        source_view.add_from_file(filename)
+        self.left_box.add_child(source_view, expand=True)
 
         v = analyze.analyze(source_view.get_content())
         for reference in v.references.values():
@@ -150,10 +158,9 @@ class App:
 
             info_ = TextArea()
             info_.set_content(doc.encode('utf-8'))
-            right_box.add_child(info_, expand=True)
+            self.right_box.add_child(info_, expand=True)
 
         source_view.grab_focus()
-        self.clutter.show()
 
     def on_key_press_event(self, window, event):
         if event.keyval == Gdk.KEY_Escape:
@@ -166,9 +173,13 @@ class App:
         if state & Gdk.WindowState.FULLSCREEN:
             self.setup_boxes()
 
-def main():
+def main(args):
     GtkClutter.init([])
-    App()
+    if len(args) > 1:
+        filename = args[1]
+    else:
+        filename = None
+    app = App(filename=filename)
     Gtk.main()
 
-main()
+sys.exit(main(sys.argv))
