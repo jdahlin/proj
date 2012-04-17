@@ -140,24 +140,26 @@ class Visitor(ast.NodeVisitor):
         else:
             raise NotImplementedError(node)
 
+def analyze(text):
+    tree = ast.parse(text)
+    visitor = Visitor()
+    visitor.visit(tree)
+    return visitor
+
 
 def test_simple():
-    tree = ast.parse("f = open()")
-    v = Visitor()
-    v.visit(tree)
+    v = analyze("f = open()")
     assert v.namespace['f'].value == builtins.file
     assert v.references['open'].value == builtins.open
 
 
 def test_basic_types():
-    tree = ast.parse("""
+    v = analyze("""
 str = "foo"
 int = 1
 long = 1L
 float = 1.0
 unicode = u'unicode'""")
-    v = Visitor()
-    v.visit(tree)
     assert v.namespace['str'].value == str
     assert v.namespace['int'].value == int
     assert v.namespace['long'].value == long
@@ -177,46 +179,40 @@ fd.read()""")
 
 
 def test_multi_assignment():
-    tree = ast.parse("""
+    v = analyze("""
 a = open("foo")
 b = a
 c = b
 d = c""")
-    v = Visitor()
-    v.visit(tree)
     assert v.namespace['a'].value == builtins.file
     assert v.namespace['b'].value == builtins.file
     assert v.namespace['c'].value == builtins.file
     assert v.namespace['d'].value == builtins.file
 
 def test_recursive_attributes():
-    tree = ast.parse("""
+    v = analyze("""
 a = open("foo")
 b = a
 c = b
 d = c""")
-    v = Visitor()
-    v.visit(tree)
     assert v.namespace['a'].value == builtins.file
     assert v.namespace['b'].value == builtins.file
     assert v.namespace['c'].value == builtins.file
     assert v.namespace['d'].value == builtins.file
 
 def test_function():
-    tree = ast.parse("""
+    v = analyze("""
 def function():
     return 'foobar'
 a = function()
 """)
-    v = Visitor()
-    v.visit(tree)
     func = v.namespace['function']
     assert func.args == []
     assert func.rettype.value == str, func.rettype
     assert v.namespace['a'].value == str, v.namespace['a'].value
 
 def test_function():
-    tree = ast.parse("""
+    v = analyze("""
 def baz():
     return 'string'
 def bar():
@@ -225,8 +221,6 @@ def foo():
     return bar()
 ret = foo()
 """)
-    v = Visitor()
-    v.visit(tree)
     func = v.namespace['foo']
     assert func.args == []
     assert func.rettype.value == str, func.rettype
