@@ -134,8 +134,12 @@ class Visitor(ast.NodeVisitor):
             return type(node.s)
         elif isinstance(node, ast.Num):
             return type(node.n)
+        elif isinstance(node, ast.Call):
+            type_info = self.namespace[node.func.id]
+            return type_info.rettype.value
         else:
             raise NotImplementedError(node)
+
 
 def test_simple():
     tree = ast.parse("f = open()")
@@ -143,6 +147,7 @@ def test_simple():
     v.visit(tree)
     assert v.namespace['f'].value == builtins.file
     assert v.references['open'].value == builtins.open
+
 
 def test_basic_types():
     tree = ast.parse("""
@@ -209,6 +214,29 @@ a = function()
     assert func.args == []
     assert func.rettype.value == str, func.rettype
     assert v.namespace['a'].value == str, v.namespace['a'].value
+
+def test_function():
+    tree = ast.parse("""
+def baz():
+    return 'string'
+def bar():
+    return baz()
+def foo():
+    return bar()
+ret = foo()
+""")
+    v = Visitor()
+    v.visit(tree)
+    func = v.namespace['foo']
+    assert func.args == []
+    assert func.rettype.value == str, func.rettype
+    func = v.namespace['bar']
+    assert func.args == []
+    assert func.rettype.value == str, func.rettype
+    func = v.namespace['baz']
+    assert func.args == []
+    assert func.rettype.value == str, func.rettype
+    assert v.namespace['ret'].value == str, v.namespace['ret'].value
 
 if __name__ == '__main__':
     test_simple()
