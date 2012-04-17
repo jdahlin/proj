@@ -1,0 +1,20 @@
+.background {
+   background-color: #bbb;
+   padding: 1em;
+   spacing: 4em;
+}
+
+.left_box,
+.right_box {
+   width: 40em;
+   height: 12em;
+   spacing: 4em;
+   padding: 1em;
+}
+
+.source_box {
+   background-color: #ffffff;
+   border-radius: 8px;
+   padding: 1em;
+   spacing: 10em;
+}
