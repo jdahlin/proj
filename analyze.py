@@ -1,60 +1,163 @@
 import ast
+import types
 
-builtins = """
-class file(object):
-    def read(self, size=-1):
+import builtins
+
+
+class Function(object):
+    def __init__(self, name, args, rettype):
+        self.name = name
+        self.args = args
+        self.rettype = rettype
+
+
+class Reference(object):
+    def __init__(self, value):
+        self.value = value
+
+    def __repr__(self):
+        return 'Reference(%r)' % (self.value, )
+
+
+class TypeInfo(object):
+    def __init__(self, node, value):
+        assert not type(value) is TypeInfo
+        self.node = node
+        self.value = value
+
+    def __repr__(self):
+        return 'TypeInfo(%r)' % (self.value, )
+
+
+class Module(object):
+    def __init__(self):
         pass
-    read.retval = str
 
-def open(name, mode='r', buffering=0):
-    pass
-open.retval = file
-"""
 
-class Call(object):
-    def __init__(self, node):
-        self.call = node
-        self.func_name = None
-        self.type = None
+class Scope(object):
+    def __init__(self):
+        self.scopes = []
 
-    def resolve(self, namespace):
-        func = self.call.func
-        if isinstance(func, ast.Name):
-            self.func_name = func.id
-        elif isinstance(func, ast.Attribute):
-            try:
-                target = namespace[func.value.id]
-            except KeyError:
-                return
-            print 'attr', target
-        else:
-            raise NotImplementedError(self.call)
+    def lookup(self, attr):
+        for scope in reversed(self.scopes):
+            if hasattr(scope, attr):
+                return getattr(scope, attr)
+
+        raise AttributeError(attr)
+
+    def push(self, scope):
+        self.scopes.append(scope)
+
+    def pop(self):
+        del self.scopes[-1]
 
 
 class Visitor(ast.NodeVisitor):
     def __init__(self):
         ast.NodeVisitor.__init__(self)
+        self.module = Module()
+        self.scope = Scope()
+        self.scope.push(builtins)
+        self.scope.push(self.module)
         self.namespace = {}
-        self.callers = []
 
-    def visit_Call(self, node):
-        call = Call(node)
-        call.resolve(self.namespace)
-        self.callers.append(call)
-        ast.NodeVisitor.generic_visit(self, node)
+        # List of references to outside of this block of code
+        self.references = {}
+
+    def visit_Name(self, node):
+        if isinstance(node.ctx, ast.Load):
+            if node.id not in self.namespace:
+                attr = self.scope.lookup(node.id)
+                self.references[node.id] = Reference(attr)
 
     def visit_Assign(self, node):
+        ast.NodeVisitor.visit(self, node.value)
+        if isinstance(node.value, ast.Call):
+            type_info = node.value.type_info
+        elif isinstance(node.value, ast.Name):
+            type_info = self.namespace[node.value.id]
+        else:
+            guess_type = self._guess_type(node.value)
+            if guess_type is None:
+                raise NotImplementedError(node.value)
+            type_info = TypeInfo(node.value, guess_type)
+
         for target in node.targets:
-            self.namespace[target.id] = node.value.func
+            setattr(self.module, target.id, node.value)
+            self.namespace[target.id] = type_info
+            ast.NodeVisitor.visit(self, target)
+
+    def visit_Call(self, node):
+        if isinstance(node.func, ast.Name):
+            obj = self.scope.lookup(node.func.id)
+            if isinstance(obj, Function):
+                type_info = obj.rettype
+            elif isinstance(obj, types.FunctionType):
+                rettype = getattr(obj, 'rettype', None)
+                if rettype is not None:
+                    type_info = TypeInfo(node.func, rettype)
+            else:
+                raise NotImplementedError(obj)
+        elif isinstance(node.func, ast.Attribute):
+            live_parent = self.namespace[node.func.value.id]
+            live_obj = getattr(live_parent.value, node.func.attr, None)
+            self.references[node.func.attr] = Reference(live_obj)
+            type_info = TypeInfo(node.func, live_obj.rettype)
+        else:
+            raise NotImplementedError(node.func)
+        node.type_info = type_info
         ast.NodeVisitor.generic_visit(self, node)
 
+    def visit_FunctionDef(self, node):
+        returns = []
+        for stmt in node.body:
+            if isinstance(stmt, ast.Return):
+                returns.append(stmt)
+
+        if len(returns) == 0:
+            rettype = TypeInfo(None, None)
+        elif len(returns) == 1:
+            ret_node = returns[0]
+            value = self._guess_type(ret_node.value)
+            rettype = TypeInfo(ret_node, value)
+        else:
+            raise NotImplementedError("several returns")
+
+        func = Function(name=node.name,
+                        args=node.args.args,
+                        rettype=rettype)
+        setattr(self.module, node.name, func)
+        self.namespace[node.name] = func
+
+    def _guess_type(self, node):
+        if isinstance(node, ast.Str):
+            return type(node.s)
+        elif isinstance(node, ast.Num):
+            return type(node.n)
+        else:
+            raise NotImplementedError(node)
 
 def test_simple():
-    tree = ast.parse("f = func()")
+    tree = ast.parse("f = open()")
     v = Visitor()
     v.visit(tree)
-    assert len(v.callers) == 1
-    assert v.callers[0].func_name == 'func'
+    assert v.namespace['f'].value == builtins.file
+    assert v.references['open'].value == builtins.open
+
+def test_basic_types():
+    tree = ast.parse("""
+str = "foo"
+int = 1
+long = 1L
+float = 1.0
+unicode = u'unicode'""")
+    v = Visitor()
+    v.visit(tree)
+    assert v.namespace['str'].value == str
+    assert v.namespace['int'].value == int
+    assert v.namespace['long'].value == long
+    assert v.namespace['float'].value == float
+    assert v.namespace['unicode'].value == unicode
 
 
 def test_indirected():
@@ -63,8 +166,53 @@ fd = open("foo")
 fd.read()""")
     v = Visitor()
     v.visit(tree)
+    assert v.references['open'].value == builtins.open
+    assert v.references['read'].value == builtins.file.read
+    assert v.namespace['fd'].value == builtins.file
 
+
+def test_multi_assignment():
+    tree = ast.parse("""
+a = open("foo")
+b = a
+c = b
+d = c""")
+    v = Visitor()
+    v.visit(tree)
+    assert v.namespace['a'].value == builtins.file
+    assert v.namespace['b'].value == builtins.file
+    assert v.namespace['c'].value == builtins.file
+    assert v.namespace['d'].value == builtins.file
+
+def test_recursive_attributes():
+    tree = ast.parse("""
+a = open("foo")
+b = a
+c = b
+d = c""")
+    v = Visitor()
+    v.visit(tree)
+    assert v.namespace['a'].value == builtins.file
+    assert v.namespace['b'].value == builtins.file
+    assert v.namespace['c'].value == builtins.file
+    assert v.namespace['d'].value == builtins.file
+
+def test_function():
+    tree = ast.parse("""
+def function():
+    return 'foobar'
+a = function()
+""")
+    v = Visitor()
+    v.visit(tree)
+    func = v.namespace['function']
+    assert func.args == []
+    assert func.rettype.value == str, func.rettype
+    assert v.namespace['a'].value == str, v.namespace['a'].value
 
 if __name__ == '__main__':
     test_simple()
+    test_basic_types()
     test_indirected()
+    test_multi_assignment()
+    test_function()
