@@ -1,3 +1,4 @@
+import random
 import os
 import sys
 shpath = '/usr/lib/gnome-shell'
@@ -21,6 +22,34 @@ def add_child(parent, actor, **props):
         parent.child_set_property(actor, key, value)
 Clutter.Actor.add_child = add_child
 
+_TANGO_PALETTE = [
+    '#eeeeec', '#d3d7cf', '#babdb6', '#fce94f', '#edd400', '#c4a000',
+    '#8ae234', '#73d216', '#4e9a06', '#fcaf3e', '#f57900', '#ce5c00',
+    '#e9b96e', '#c17d11', '#8f5902', '#729fcf', '#3465a4', '#204a87',
+    '#ad7fa8', '#75507b', '#5c3566', '#888a85', '#555753', '#2e3436',
+    '#ef2929', '#eeeeec', '#d3d7cf', '#babdb6', '#fce94f', '#edd400',
+    '#c4a000', '#8ae234', '#73d216', '#4e9a06', '#fcaf3e', '#f57900',
+    '#ce5c00', '#e9b96e', '#c17d11', '#8f5902', '#729fcf', '#3465a4',
+    '#204a87', '#ad7fa8', '#75507b', '#5c3566', '#888a85', '#555753',
+    '#2e3436', '#ef2929', '#cc0000', '#a40000']
+
+def html_to_rgba(color, alpha=1.0):
+    rgba = Gdk.RGBA()
+    rgba.parse('rgba(%d, %d, %d, %f)' % (
+        int(color[1:3], 16),
+        int(color[3:5], 16),
+        int(color[5:7], 16),
+        alpha))
+    return rgba
+
+
+def gdk_rgba_to_clutter(rgba, alpha=0):
+    ccolor = Clutter.Color()
+    ccolor.red = int(rgba.red * 255)
+    ccolor.green = int(rgba.green * 255)
+    ccolor.blue = int(rgba.blue * 255)
+    ccolor.alpha = alpha
+    return
 
 class TextArea(St.BoxLayout):
     def __init__(self):
@@ -32,16 +61,22 @@ class TextArea(St.BoxLayout):
         GtkClutter.Actor.__init__(self)
 
         self.text_buffer = self.create_buffer()
-        self._create_default_tags()
+        self._create_tags()
         self._create_ui()
         self.view.set_buffer(self.text_buffer)
 
-    def _create_default_tags(self):
+    def _create_tag(self, name, **attributes):
         tag_table = self.text_buffer.get_tag_table()
-        self._default_tag = Gtk.TextTag(name='default')
-        tag_table.add(self._default_tag)
-        self._default_tag.props.font = Pango.FontDescription('Ubuntu Mono 12')
+        tag = Gtk.TextTag(name=name)
+        tag_table.add(tag)
+        for attribute in attributes.keys():
+            setattr(tag.props, attribute, attributes[attribute])
+        return tag
 
+    def _create_tags(self):
+        self._default_tag = self._create_tag(
+            'default',
+            )
     def _create_ui(self):
         bin = self.gtk_actor.get_widget()
         self.gtk_actor.show()
@@ -71,6 +106,15 @@ class TextArea(St.BoxLayout):
     def create_view(self):
         view = Gtk.TextView()
         return view
+
+    def highlight(self, line, start_col, end_col, color):
+        start = self.text_buffer.get_iter_at_line_offset(line, start_col)
+        end = self.text_buffer.get_iter_at_line_offset(line, end_col)
+        tag = self._create_tag(
+            'highlight-%s' % (color.to_string(), ),
+            background_set=True,
+            background_rgba=color)
+        self.text_buffer.apply_tag(tag, start, end)
 
     def set_content(self, content):
         self.text_buffer.props.text = content
@@ -149,17 +193,29 @@ class App:
         self.left_box.add_child(source_view, expand=True)
 
         v = analyze.analyze(source_view.get_content())
+        colors = _TANGO_PALETTE[:]
+        random.shuffle(colors)
         for reference in v.references.values():
             if not reference.value:
                 continue
             doc = reference.value.__doc__
             if not doc:
                 continue
-
             info_ = TextArea()
+            n = reference.node
             info_.set_content(doc.encode('utf-8'))
+
+            color = colors.pop()
+            rgba = html_to_rgba(color, alpha=0.3)
+            source_view.highlight(n.lineno - 1,
+                                  n.col_offset,
+                                  n.col_offset + len(n.id),
+                                  color=rgba)
             info_.view.set_editable(False)
             info_.view.set_cursor_visible(False)
+            ccolor = gdk_rgba_to_clutter(rgba)
+            info_.props.background_color = ccolor
+            print info_.props.background_color.red
             self.right_box.add_child(info_, expand=True)
 
         source_view.grab_focus()

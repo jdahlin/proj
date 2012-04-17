@@ -12,7 +12,8 @@ class Function(object):
 
 
 class Reference(object):
-    def __init__(self, value):
+    def __init__(self, node, value):
+        self.node = node
         self.value = value
 
     def __repr__(self):
@@ -53,6 +54,11 @@ class Scope(object):
 
 
 class Visitor(ast.NodeVisitor):
+    #
+    # A) Figure out which external parts this
+    #    piece of code references
+    # B) Attach type information to variables
+    #
     def __init__(self):
         ast.NodeVisitor.__init__(self)
         self.module = Module()
@@ -65,10 +71,11 @@ class Visitor(ast.NodeVisitor):
         self.references = {}
 
     def visit_Name(self, node):
-        if isinstance(node.ctx, ast.Load):
-            if node.id not in self.namespace:
-                attr = self.scope.lookup(node.id)
-                self.references[node.id] = Reference(attr)
+        if not isinstance(node.ctx, ast.Load):
+            return
+        if node.id not in self.namespace:
+            attr = self.scope.lookup(node.id)
+            self.references[node.id] = Reference(node, attr)
 
     def visit_Assign(self, node):
         ast.NodeVisitor.visit(self, node.value)
@@ -101,7 +108,7 @@ class Visitor(ast.NodeVisitor):
         elif isinstance(node.func, ast.Attribute):
             live_parent = self.namespace[node.func.value.id]
             live_obj = getattr(live_parent.value, node.func.attr, None)
-            self.references[node.func.attr] = Reference(live_obj)
+            self.references[node.func.attr] = Reference(node.func, live_obj)
             type_info = TypeInfo(node.func, live_obj.rettype)
         else:
             raise NotImplementedError(node.func)
