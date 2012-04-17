@@ -19,6 +19,51 @@ def add_child(parent, actor, **props):
 Clutter.Actor.add_child = add_child
 
 
+class SourceViewArea(GtkClutter.Actor):
+    def __init__(self):
+        GtkClutter.Actor.__init__(self)
+
+        self._create_language()
+        self._create_buffer()
+        self._create_ui()
+        self.source_view.set_buffer(self.text_buffer)
+
+    def _create_language(self):
+        manager = GtkSource.LanguageManager.get_default()
+        self.language = manager.get_language('python')
+
+    def _create_buffer(self):
+        self.text_buffer = GtkSource.Buffer()
+        self.text_buffer.set_language(self.language)
+        tag_table = self.text_buffer.get_tag_table()
+        self._default_tag = Gtk.TextTag(name='default')
+        tag_table.add(self._default_tag)
+        self._default_tag.props.font = Pango.FontDescription('Ubuntu Mono 12')
+
+    def _create_ui(self):
+        bin = self.get_widget()
+        self.show()
+
+        sw = Gtk.ScrolledWindow()
+        bin.add(sw)
+        sw.show()
+
+        self.source_view = GtkSource.View()
+        sw.add(self.source_view)
+        self.source_view.show()
+
+    def add_from_file(self, filename):
+        # FIXME: async
+        fd = open(filename)
+        text = fd.read()
+        self.text_buffer.set_text(text)
+        start, end = self.text_buffer.get_bounds()
+        self.text_buffer.apply_tag(self._default_tag, start, end)
+
+    def grab_focus(self):
+        self.source_view.grab_focus()
+
+
 class App:
     def __init__(self):
         self.setup()
@@ -49,7 +94,7 @@ class App:
         self.stage.add_child(background)
 
         left_box = St.BoxLayout(style_class="left_box")
-        background.add_child(left_box)
+        background.add_child(left_box, y_fill=False, y_align=St.Align.START)
 
         right_box = St.BoxLayout(style_class="right_box")
         background.add_child(right_box, expand=True,
@@ -65,32 +110,11 @@ class App:
         self.create_source_view(box)
 
     def create_source_view(self, main_box):
-        text_buffer = GtkSource.Buffer()
-        manager = GtkSource.LanguageManager.get_default()
-        text_buffer.set_language(manager.get_language('python'))
-        #text_buffer.set_text(open('main.py').read())
-        tag_table = text_buffer.get_tag_table()
-        tag = Gtk.TextTag(name='default')
-        tag_table.add(tag)
-        tag.props.font = Pango.FontDescription('Ubuntu Mono 12')
-        start, end = text_buffer.get_bounds()
-        text_buffer.apply_tag(tag, start, end)
-
-        gtk_actor = GtkClutter.Actor()
-        main_box.add_child(gtk_actor, expand=True, x_fill=True)
-
-        bin = gtk_actor.get_widget()
-        gtk_actor.show()
-
-        sw = Gtk.ScrolledWindow()
-        bin.add(sw)
-        sw.show()
-
-        source_view = GtkSource.View.new_with_buffer(text_buffer)
-        sw.add(source_view)
-
-        source_view.show()
-        source_view.grab_focus()
+        gtk_actor = SourceViewArea()
+        main_box.add_child(gtk_actor, expand=True, x_fill=True,
+                          )
+        gtk_actor.add_from_file('example.py')
+        gtk_actor.grab_focus()
 
     def on_key_press_event(self, window, event):
         if event.keyval == Gdk.KEY_Escape:
