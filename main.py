@@ -158,6 +158,8 @@ class App:
 
             info_ = TextArea()
             info_.set_content(doc.encode('utf-8'))
+            info_.view.set_editable(False)
+            info_.view.set_cursor_visible(False)
             self.right_box.add_child(info_, expand=True)
 
         source_view.grab_focus()
