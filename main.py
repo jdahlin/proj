@@ -44,14 +44,6 @@ def html_to_rgba(color, alpha=1.0):
     return rgba
 
 
-def gdk_rgba_to_clutter(rgba, alpha=0):
-    ccolor = Clutter.Color()
-    ccolor.red = int(rgba.red * 255)
-    ccolor.green = int(rgba.green * 255)
-    ccolor.blue = int(rgba.blue * 255)
-    ccolor.alpha = alpha
-    return
-
 class TextArea(St.BoxLayout):
     def __init__(self):
         St.BoxLayout.__init__(self, style_class="source_box")
@@ -132,6 +124,9 @@ class TextArea(St.BoxLayout):
 
     def grab_focus(self):
         self.view.grab_focus()
+
+    def set_background_color(self, color):
+        self.props.style = 'background-color: ' + color.to_string() + ';'
 
 
 class SourceViewArea(TextArea):
@@ -227,16 +222,14 @@ class App:
             info_.set_content(doc.encode('utf-8'))
 
             color = colors.pop()
-            rgba = html_to_rgba(color, alpha=0.3)
+            rgba = html_to_rgba(color, alpha=0.2)
             source_view.highlight(n.lineno - 1,
                                   n.col_offset,
                                   n.col_offset + len(n.id),
-                                  color=rgba)
+                                  rgba)
             info_.view.set_editable(False)
             info_.view.set_cursor_visible(False)
-            ccolor = gdk_rgba_to_clutter(rgba)
-            info_.props.background_color = ccolor
-            print info_.props.background_color.red
+            info_.set_background_color(rgba)
             self.right_box.add_child(info_, expand=True)
 
         return source_view
