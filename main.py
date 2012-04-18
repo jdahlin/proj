@@ -6,6 +6,7 @@ os.environ['LD_PRELOAD'] = shpath + '/libgnome-shell.so'
 os.environ['GI_TYPELIB_PATH'] = shpath
 
 import cairo
+from gi.repository import GObject
 from gi.repository import Pango
 from gi.repository import Gdk
 from gi.repository import Gtk
@@ -33,6 +34,7 @@ _TANGO_PALETTE = [
     '#ce5c00', '#e9b96e', '#c17d11', '#8f5902', '#729fcf', '#3465a4',
     '#204a87', '#ad7fa8', '#75507b', '#5c3566', '#888a85', '#555753',
     '#2e3436', '#ef2929', '#cc0000', '#a40000']
+random.shuffle(_TANGO_PALETTE)
 
 def html_to_rgba(color, alpha=1.0):
     rgba = Gdk.RGBA()
@@ -45,6 +47,10 @@ def html_to_rgba(color, alpha=1.0):
 
 
 class TextArea(St.BoxLayout):
+    __gsignals__ = {
+        'rescan': (GObject.SIGNAL_RUN_FIRST, GObject.TYPE_NONE,
+                   ())
+        }
     def __init__(self):
         St.BoxLayout.__init__(self, style_class="source_box")
 
@@ -54,20 +60,33 @@ class TextArea(St.BoxLayout):
         GtkClutter.Actor.__init__(self)
 
         self.text_buffer = self.create_buffer()
+        self.text_buffer.connect('insert-text',
+                                 self._on_text_buffer_insert_text)
+        self.text_buffer.connect('delete-range',
+                                 self._on_text_buffer_delete_range)
         self._create_tags()
         self._create_ui()
         self.view.set_buffer(self.text_buffer)
 
-    def _create_tag(self, name, **attributes):
+    def _on_text_buffer_insert_text(self, text_buffer, titer, text, len):
+        self.emit('rescan')
+
+    def _on_text_buffer_delete_range(self, text_buffer, start, end):
+        self.emit('rescan')
+
+    def _create_or_get_tag(self, name, **attributes):
         tag_table = self.text_buffer.get_tag_table()
+        tag = tag_table.lookup(name)
+        if tag:
+            return tag
         tag = Gtk.TextTag(name=name)
-        tag_table.add(tag)
         for attribute in attributes.keys():
             setattr(tag.props, attribute, attributes[attribute])
+        tag_table.add(tag)
         return tag
 
     def _create_tags(self):
-        self._default_tag = self._create_tag(
+        self._default_tag = self._create_or_get_tag(
             'default',
             )
     def _create_ui(self):
@@ -110,7 +129,7 @@ class TextArea(St.BoxLayout):
     def highlight(self, line, start_col, end_col, color):
         start = self.text_buffer.get_iter_at_line_offset(line, start_col)
         end = self.text_buffer.get_iter_at_line_offset(line, end_col)
-        tag = self._create_tag(
+        tag = self._create_or_get_tag(
             'highlight-%s' % (color.to_string(), ),
             background_set=True,
             background_rgba=color)
@@ -154,6 +173,7 @@ class SourceViewArea(TextArea):
 
 class App:
     def __init__(self, filename):
+        self._analyze_views = []
         self.filename = filename
         self.setup()
 
@@ -194,8 +214,11 @@ class App:
             source_view = self.open_file(self.filename)
         else:
             source_view = self.new_empty()
-
+        def scan(source_view, *args):
+            self._analyze(source_view)
+        source_view.connect('rescan', scan)
         source_view.grab_focus()
+        self._analyze(source_view)
 
     def new_empty(self):
         source_view = SourceViewArea()
@@ -207,10 +230,17 @@ class App:
         source_view = SourceViewArea()
         source_view.add_from_file(filename)
         self.left_box.add_child(source_view, expand=True)
+        return source_view
 
-        v = analyze.analyze(source_view.get_content())
+    def _analyze(self, source_view):
+        try:
+            v = analyze.analyze(source_view.get_content())
+        except:
+            return
         colors = _TANGO_PALETTE[:]
-        random.shuffle(colors)
+        for view in self._analyze_views:
+            view.destroy()
+        self._analyze_views = []
         for reference in v.references.values():
             if not reference.value:
                 continue
@@ -231,6 +261,7 @@ class App:
             info_.view.set_cursor_visible(False)
             info_.set_background_color(rgba)
             self.right_box.add_child(info_, expand=True)
+            self._analyze_views.append(info_)
 
         return source_view
 
