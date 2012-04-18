@@ -139,11 +139,14 @@ class SourceViewArea(TextArea):
         view = GtkSource.View()
         return view
 
+    def set_language(self, language):
+        self.text_buffer.set_language(
+            self._language_manager.get_language(language))
+
     def add_from_file(self, filename):
         super(SourceViewArea, self).add_from_file(filename)
         if filename.endswith('.py'):
-            self.text_buffer.set_language(
-                self._language_manager.get_language('python'))
+            self.set_language('python')
 
 
 class App:
@@ -185,7 +188,17 @@ class App:
         self.clutter.show()
 
         if self.filename:
-            self.open_file(self.filename)
+            source_view = self.open_file(self.filename)
+        else:
+            source_view = self.new_empty()
+
+        source_view.grab_focus()
+
+    def new_empty(self):
+        source_view = SourceViewArea()
+        source_view.set_language('python')
+        self.left_box.add_child(source_view, expand=True)
+        return source_view
 
     def open_file(self, filename):
         source_view = SourceViewArea()
@@ -218,7 +231,7 @@ class App:
             print info_.props.background_color.red
             self.right_box.add_child(info_, expand=True)
 
-        source_view.grab_focus()
+        return source_view
 
     def on_key_press_event(self, window, event):
         if event.keyval == Gdk.KEY_Escape:
