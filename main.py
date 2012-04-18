@@ -5,6 +5,7 @@ shpath = '/usr/lib/gnome-shell'
 os.environ['LD_PRELOAD'] = shpath + '/libgnome-shell.so'
 os.environ['GI_TYPELIB_PATH'] = shpath
 
+import cairo
 from gi.repository import Pango
 from gi.repository import Gdk
 from gi.repository import Gtk
@@ -86,6 +87,13 @@ class TextArea(St.BoxLayout):
         sw.show()
 
         self.view = self.create_view()
+        def draw(widget, cr):
+            cr.set_source_rgba(0, 0, 0, 0.0)
+            cr.set_operator(cairo.OPERATOR_SOURCE)
+            cr.paint()
+            cr.set_operator(cairo.OPERATOR_OVER)
+        self.view.set_app_paintable(True)
+        self.view.connect('draw', draw)
         sw.add(self.view)
         self.view.show()
 
