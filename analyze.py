@@ -110,6 +110,8 @@ class Visitor(ast.NodeVisitor):
             live_obj = getattr(live_parent.value, node.func.attr, None)
             self.references[node.func.attr] = Reference(node.func, live_obj)
             type_info = TypeInfo(node.func, live_obj.rettype)
+        elif isinstance(node.func, ast.Subscript):
+            type_info = None
         else:
             raise NotImplementedError(node.func)
         node.type_info = type_info
@@ -256,6 +258,13 @@ def test_partial_function_call():
     assert v.references['str'].value == builtins.str
 
 
+def test_non_function_reference():
+    v = analyze("str[hash](id)")
+    assert v.references['str'].value == builtins.str
+    assert v.references['hash'].value == builtins.hash
+    assert v.references['id'].value == builtins.id
+
+
 if __name__ == '__main__':
     test_simple()
     test_basic_types()
@@ -263,3 +272,4 @@ if __name__ == '__main__':
     test_multi_assignment()
     test_function()
     test_partial_function_call()
+    test_non_function_reference()
