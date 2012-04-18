@@ -104,7 +104,7 @@ class Visitor(ast.NodeVisitor):
                 if rettype is not None:
                     type_info = TypeInfo(node.func, rettype)
             else:
-                raise NotImplementedError(obj)
+                type_info = TypeInfo(node.func, obj)
         elif isinstance(node.func, ast.Attribute):
             live_parent = self.namespace[node.func.value.id]
             live_obj = getattr(live_parent.value, node.func.attr, None)
@@ -147,8 +147,16 @@ class Visitor(ast.NodeVisitor):
         else:
             raise NotImplementedError(node)
 
-def analyze(text):
-    tree = ast.parse(text)
+def analyze(text, filename="<stdin>"):
+    try:
+        tree = compile(text, filename, 'exec', ast.PyCF_ONLY_AST)
+    except SyntaxError, value:
+        left = text.count('(')
+        right = text.count(')')
+        while left > right:
+            text += ')'
+            right += 1
+        tree = ast.parse(text)
     visitor = Visitor()
     visitor.visit(tree)
     return visitor
@@ -239,9 +247,19 @@ ret = foo()
     assert func.rettype.value == str, func.rettype
     assert v.namespace['ret'].value == str, v.namespace['ret'].value
 
+def test_partial_function_call():
+    v = analyze("open(")
+    assert v.references['open'].value == builtins.open
+
+    v = analyze("open(str(")
+    assert v.references['open'].value == builtins.open
+    assert v.references['str'].value == builtins.str
+
+
 if __name__ == '__main__':
     test_simple()
     test_basic_types()
     test_indirected()
     test_multi_assignment()
     test_function()
+    test_partial_function_call()
