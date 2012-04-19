@@ -233,10 +233,7 @@ class App:
         return source_view
 
     def _analyze(self, source_view):
-        try:
-            v = analyze.analyze(source_view.get_content())
-        except:
-            return
+        v = analyze.analyze(source_view.get_content())
         colors = _TANGO_PALETTE[:]
         for view in self._analyze_views:
             view.destroy()

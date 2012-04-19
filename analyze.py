@@ -117,6 +117,11 @@ class Visitor(ast.NodeVisitor):
         node.type_info = type_info
         ast.NodeVisitor.generic_visit(self, node)
 
+    def visit_Import(self, node):
+        if len(node.names) != 1:
+            raise NotImplementedError(ast.dump(node))
+        self.namespace[node.names[0].name] = node
+
     def visit_FunctionDef(self, node):
         returns = []
         for stmt in node.body:
@@ -139,15 +144,24 @@ class Visitor(ast.NodeVisitor):
         self.namespace[node.name] = func
 
     def _guess_type(self, node):
-        if isinstance(node, ast.Str):
+        if isinstance(node, ast.Name):
+            # FIXME:
+            print node
+        elif isinstance(node, ast.Str):
             return type(node.s)
         elif isinstance(node, ast.Num):
             return type(node.n)
         elif isinstance(node, ast.Call):
             type_info = self.namespace[node.func.id]
             return type_info.rettype.value
+        elif isinstance(node, ast.BinOp):
+            if isinstance(node.op, ast.Mod):
+                # FIXME: Just take the left side of the %
+                return self._guess_type(node.left)
+            else:
+                raise NotImplementedError(ast.dump(node))
         else:
-            raise NotImplementedError(node)
+            raise NotImplementedError(ast.dump(node))
 
 def analyze(text, filename="<stdin>"):
     try:
@@ -228,7 +242,6 @@ a = function()
     assert func.rettype.value == str, func.rettype
     assert v.namespace['a'].value == str, v.namespace['a'].value
 
-def test_function():
     v = analyze("""
 def baz():
     return 'string'
@@ -265,6 +278,18 @@ def test_non_function_reference():
     assert v.references['id'].value == builtins.id
 
 
+def test_function_assignment():
+    # FIXME:
+    return
+    v = analyze("""
+def function():
+    a = open()
+    return a.read()
+""")
+    func = v.namespace['function']
+    assert func.args == []
+    assert v.namespace['function'].value == str, builtins.str
+
 if __name__ == '__main__':
     test_simple()
     test_basic_types()
@@ -273,3 +298,4 @@ if __name__ == '__main__':
     test_function()
     test_partial_function_call()
     test_non_function_reference()
+    test_function_assignment()
